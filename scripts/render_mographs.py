@@ -4,7 +4,7 @@ Reads todays render job from Cloudinary, renders each mograph clip
 using Remotion (React/Node.js), uploads back to Cloudinary.
 
 Replaces ALL Blender mograph rendering.
-The render PC (watcher.py) is now ONLY needed if you want to keep it —
+The render PC (watcher.py) is now ONLY needed if you want to keep it
 but this script makes it completely optional.
 
 Called by morning-assembly.yml before assemble_video.py
