@@ -1,6 +1,6 @@
 render_mographs.py
 Runs inside GitHub Actions NO render PC needed for mographs.
-Reads today's render job from Cloudinary, renders each mograph clip
+Reads todays render job from Cloudinary, renders each mograph clip
 using Remotion (React/Node.js), uploads back to Cloudinary.
 
 Replaces ALL Blender mograph rendering.
