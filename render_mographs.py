@@ -5,7 +5,7 @@ Reads today's render job from Cloudinary, renders each mograph clip
 using Remotion (React/Node.js), uploads back to Cloudinary.
 
 Replaces ALL Blender mograph rendering.
-The render PC (watcher.py) is now ONLY needed if you want to keep it —
+The render PC (watcher.py) is now ONLY needed if you want to keep it,
 but this script makes it completely optional.
 
 Called by morning-assembly.yml before assemble_video.py
@@ -65,11 +65,12 @@ COMPOSITION_MAP = {
 }
 
 
-def log(msg: str):
+def log(msg: str) -> None:
     print(f"[{CHANNEL_ID}][Remotion] {msg}", flush=True)
 
 
 def fetch_manifest() -> dict | None:
+    """Fetch today's render manifest JSON from Cloudinary."""
     public_id = f"dopamine-studios/{CHANNEL_ID}/manifests/{DATE_STR}"
     try:
         result = cloudinary.api.resource(public_id, resource_type="raw")
@@ -80,7 +81,7 @@ def fetch_manifest() -> dict | None:
         return None
 
 
-def install_remotion():
+def install_remotion() -> bool:
     """Install Node.js dependencies for Remotion in GitHub Actions."""
     remotion_dir = Path(__file__).parent.parent / "remotion"
     log("Installing Remotion dependencies...")
@@ -96,9 +97,7 @@ def install_remotion():
 
 
 def render_clip(composition_id: str, props: dict, output_path: str, duration_frames: int = 72) -> bool:
-    """
-    Render a single Remotion composition to an MP4 file.
-    """
+    """Render a single Remotion composition to an MP4 file."""
     remotion_dir = Path(__file__).parent.parent / "remotion"
     props_json = json.dumps(props)
 
@@ -154,7 +153,8 @@ def upload_clip(local_path: str, line_index: int) -> str | None:
             pass
 
 
-def main():
+def main() -> None:
+    """Main entry point — fetch manifest, render all mograph clips, re-upload manifest."""
     log(f"Mograph rendering started — {DATE_STR}")
 
     manifest = fetch_manifest()
@@ -166,7 +166,6 @@ def main():
         log(f"[SKIP] Status is '{manifest.get('status')}' — skipping render.")
         sys.exit(0)
 
-    # Install Remotion
     if not install_remotion():
         sys.exit(1)
 
@@ -182,24 +181,25 @@ def main():
         if clip_cue != "no_clip":
             log(f"  Line {i}: celebrity clip [{clip_cue}] — skipping")
             rendered_clips.append({
-                "index": i, "type": "celebrity_clip",
-                "cue": clip_cue, "line": line_data.get("line", ""),
+                "index": i,
+                "type": "celebrity_clip",
+                "cue": clip_cue,
+                "line": line_data.get("line", ""),
             })
             continue
 
-        template       = mograph.get("template", "kinetic_quote")
-        composition_id = COMPOSITION_MAP.get(template, "kinetic_quote")
-        intensity      = mograph.get("intensity", "medium")
+        template        = mograph.get("template", "kinetic_quote")
+        composition_id  = COMPOSITION_MAP.get(template, "kinetic_quote")
+        intensity       = mograph.get("intensity", "medium")
         intensity_float = {"low": 0.3, "medium": 0.6, "high": 1.0}.get(intensity, 0.6)
         duration_frames = mograph.get("duration_frames", 72)
 
-        # Build props for this composition
         props = {
             **palette,
-            "intensity": intensity_float,
-            "text": line_data.get("line", "")[:60].upper(),
-            "label": mograph.get("theme", "").upper() or "NOW",
-            "channelName": manifest.get("channel_name", "DOPAMINE"),
+            "intensity":    intensity_float,
+            "text":         line_data.get("line", "")[:60].upper(),
+            "label":        mograph.get("theme", "").upper() or "NOW",
+            "channelName":  manifest.get("channel_name", "DOPAMINE"),
             "subscribeText": "SUBSCRIBE",
         }
 
@@ -207,22 +207,25 @@ def main():
         success = render_clip(composition_id, props, output_path, duration_frames)
 
         if not success:
-            # Fallback to kinetic_quote
             log(f"  Falling back to kinetic_quote for line {i}")
             success = render_clip("kinetic_quote", props, output_path, 72)
 
         if success:
             cloud_url = upload_clip(output_path, i)
             rendered_clips.append({
-                "index": i, "type": "mograph",
-                "cloudinary_url": cloud_url, "line": line_data.get("line", ""),
+                "index": i,
+                "type": "mograph",
+                "cloudinary_url": cloud_url,
+                "line": line_data.get("line", ""),
             })
         else:
             rendered_clips.append({
-                "index": i, "type": "render_failed", "line": line_data.get("line", ""),
+                "index": i,
+                "type": "render_failed",
+                "line": line_data.get("line", ""),
             })
 
-    # Write manifest with rendered clips
+    # Re-upload manifest with rendered clip URLs
     manifest["clips"]  = rendered_clips
     manifest["status"] = "rendered"
     manifest_str = json.dumps(manifest, indent=2)
