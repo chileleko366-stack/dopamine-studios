@@ -1,0 +1,35 @@
+name: 11PM Render Trigger
+
+on:
+  schedule:
+    # 11PM SAST (UTC+2) = 21:00 UTC
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+jobs:
+  write-render-jobs:
+    name: "Write render jobs → Cloudinary queue"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install anthropic requests cloudinary python-dotenv
+
+      - name: Write render job files to Cloudinary
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python scripts/write_render_jobs.py
+
+      - name: Alert render PC via Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/telegram_notify.py --mode render_start
