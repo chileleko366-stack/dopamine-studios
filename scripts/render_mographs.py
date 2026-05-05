@@ -1,5 +1,4 @@
 render_mographs.py
-
 import json
 import os
 import subprocess
