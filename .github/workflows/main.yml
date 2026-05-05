@@ -1,0 +1,160 @@
+name: 6AM Morning Assembly
+
+on:
+  schedule:
+    # 6AM SAST (UTC+2) = 04:00 UTC
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      channel_id:
+        description: "Channel to assemble (CH1-CH5 or ALL)"
+        required: false
+        default: "ALL"
+
+jobs:
+  assemble-and-upload:
+    name: "Assemble videos + upload to YouTube"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Runs assembly for each channel that has renders ready
+        channel: [CH1, CH2, CH3, CH4, CH5]
+      fail-fast: false  # If one channel fails, others continue
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies (ffmpeg)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Node.js (for Remotion)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Python dependencies
+        run: |
+          pip install \
+            anthropic \
+            requests \
+            cloudinary \
+            python-dotenv \
+            google-api-python-client \
+            google-auth-httplib2 \
+            google-auth-oauthlib \
+            ffmpeg-python \
+            Pillow \
+            edge-tts
+
+      - name: Render mographs with Remotion
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python scripts/render_mographs.py
+
+      - name: Check if channel has renders ready
+        id: check
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python scripts/check_renders.py
+        continue-on-error: true
+
+      - name: Download renders from Cloudinary
+        if: steps.check.outputs.has_renders == 'true'
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python scripts/download_renders.py
+
+      - name: Generate voiceover (documentary channels only)
+        if: steps.check.outputs.has_renders == 'true' && (matrix.channel == 'CH3' || matrix.channel == 'CH5')
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python scripts/generate_voiceover.py
+
+      - name: Assemble final video with ffmpeg
+        if: steps.check.outputs.has_renders == 'true'
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python scripts/assemble_video.py
+
+      - name: Generate thumbnail
+        if: steps.check.outputs.has_renders == 'true'
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python scripts/generate_thumbnail.py
+
+      - name: Upload to YouTube
+        if: steps.check.outputs.has_renders == 'true'
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN_CH1: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH1 }}
+          YOUTUBE_REFRESH_TOKEN_CH2: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH2 }}
+          YOUTUBE_REFRESH_TOKEN_CH3: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH3 }}
+          YOUTUBE_REFRESH_TOKEN_CH4: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH4 }}
+          YOUTUBE_REFRESH_TOKEN_CH5: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH5 }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python scripts/upload_youtube.py
+
+      - name: Upload to Google Drive
+        if: steps.check.outputs.has_renders == 'true'
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN_CH1: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH1 }}
+          YOUTUBE_REFRESH_TOKEN_CH2: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH2 }}
+          YOUTUBE_REFRESH_TOKEN_CH3: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH3 }}
+          YOUTUBE_REFRESH_TOKEN_CH4: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH4 }}
+          YOUTUBE_REFRESH_TOKEN_CH5: ${{ secrets.YOUTUBE_REFRESH_TOKEN_CH5 }}
+        run: python scripts/upload_to_drive.py
+
+      - name: Cleanup Cloudinary temp assets
+        if: steps.check.outputs.has_renders == 'true'
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: python scripts/cleanup_cloudinary.py
+
+  notify-complete:
+    name: "Send morning summary"
+    runs-on: ubuntu-latest
+    needs: assemble-and-upload
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
