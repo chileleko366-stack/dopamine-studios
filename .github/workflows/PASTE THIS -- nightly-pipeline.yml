@@ -1,0 +1,67 @@
+name: Nightly Video Pipeline
+
+on:
+  schedule:
+    # 10PM SAST (UTC+2) = 20:00 UTC
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      channel_id:
+        description: "Channel to run (CH1/CH2/CH3/CH4/CH5 or ALL)"
+        required: false
+        default: "ALL"
+      override_topic:
+        description: "Override topic (leave blank for auto)"
+        required: false
+        default: ""
+
+jobs:
+  generate-and-render:
+    name: "Generate scripts + render mographs"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          pip install \
+            anthropic \
+            requests \
+            cloudinary \
+            python-dotenv
+
+      - name: Generate tonight's topics
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          CHANNEL_OVERRIDE: ${{ github.event.inputs.channel_id || 'ALL' }}
+          TOPIC_OVERRIDE: ${{ github.event.inputs.override_topic || '' }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+        run: python scripts/generate_topics.py
+
+      - name: Generate full scripts + write render jobs to Cloudinary
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          CHANNEL_OVERRIDE: ${{ github.event.inputs.channel_id || 'ALL' }}
+        run: python scripts/write_render_jobs.py
+
+      - name: Render mographs with Remotion
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          CHANNEL_OVERRIDE: ${{ github.event.inputs.channel_id || 'ALL' }}
+        run: python scripts/render_mographs.py
