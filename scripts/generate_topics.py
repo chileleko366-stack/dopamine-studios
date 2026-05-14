@@ -1,21 +1,22 @@
 """
 generate_topics.py
 Runs inside GitHub Actions at 10PM.
-Reads all channel-config.json files, calls Gemini API to generate
-tonight's video topic for each channel, saves to Cloudinary.
+Reads all channel-config.json files, calls Claude (via claude_client) to
+generate tonight's video topic for each channel, saves to Cloudinary.
 
-GEMINI FREE TIER: 15 requests/min, 1500 requests/day -- more than enough.
-Model: gemini-2.0-flash (fastest, free, high quality)
+Uses Claude primary with Gemini fallback (see claude_client.py).
 """
 
 import json
 import os
 import base64
 from datetime import datetime, timezone
-import google.generativeai as genai
+
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
+
+from claude_client import generate
 
 cloudinary.config(
     cloud_name=os.environ["CLOUDINARY_CLOUD_NAME"],
@@ -26,9 +27,6 @@ cloudinary.config(
 
 CHANNEL_IDS    = ["CH1", "CH2", "CH3", "CH4", "CH5"]
 CONFIGS_DIR    = "configs"
-
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-model = genai.GenerativeModel("gemini-2.0-flash")
 
 CHANNEL_OVERRIDE = os.environ.get("CHANNEL_OVERRIDE", "ALL")
 TOPIC_OVERRIDE   = os.environ.get("TOPIC_OVERRIDE", "").strip()
@@ -51,34 +49,63 @@ def channel_active_today(config: dict) -> bool:
 
 
 def generate_topic(config: dict) -> str:
+    """Ask Claude for one tonight's-topic string for this channel."""
     channel_name = config.get("channel_name", "Unknown")
     mission      = config.get("identity", {}).get("mission", "")
     tone         = config.get("script", {}).get("tone", "")
     forbidden    = config.get("identity", {}).get("forbidden", "")
     celebrities  = config.get("script", {}).get("celebrities", "")
+    subjects     = config.get("script", {}).get("subjects", "")
+    researchers  = config.get("script", {}).get("researchers_and_studies", "")
+    subject_areas = config.get("script", {}).get("subject_areas", "")
     hook_formula = config.get("script", {}).get("hook", "")
     power_words  = config.get("script", {}).get("power_words", "")
+    forbidden_words = config.get("script", {}).get("forbidden_words", "")
 
     if TOPIC_OVERRIDE and (CHANNEL_OVERRIDE == "ALL" or CHANNEL_OVERRIDE == config.get("channel_id")):
         return TOPIC_OVERRIDE
 
-    prompt = f"""You are generating ONE video topic for {channel_name}.
+    # Pull whichever subject pool the channel uses
+    subject_pool = celebrities or subjects or researchers or subject_areas or ""
 
-Channel mission: {mission}
-Script tone: {tone[:300]}
-Forbidden topics: {forbidden}
-Celebrity pool (choose one if relevant): {celebrities[:400]}
-Power words to favour: {power_words}
-Hook formula: {hook_formula[:200]}
+    system_prompt = f"""You are the editorial director of the YouTube channel "{channel_name}".
 
-Generate a single compelling YouTube video topic for tonight.
-Return ONLY the topic string -- no explanation, no quotes, no formatting.
-Make it specific, emotional, and scroll-stopping.
-Example format: Why Kanye West's loneliness destroyed him before it saved him
+You have one job: pick the strongest possible topic for tonight's video.
+
+CHANNEL MISSION:
+{mission}
+
+EDITORIAL TONE:
+{tone[:600]}
+
+SUBJECT POOL (pick one if relevant):
+{subject_pool[:600]}
+
+HOOK FORMULA:
+{hook_formula[:300]}
+
+FORBIDDEN TOPICS:
+{forbidden}
+
+FORBIDDEN WORDS IN TITLES:
+{forbidden_words}
+
+POWER WORDS THIS CHANNEL FAVOURS:
+{power_words}
+
+CRITICAL: Return ONLY the topic string. No quotes, no preamble, no explanation.
+The topic must be specific, scroll-stopping, and faithful to the channel's editorial tone.
+Avoid clickbait clichés. Avoid the forbidden words. Match the hook formula's style.
 """
 
-    response = model.generate_content(prompt)
-    return response.text.strip().strip('"').strip("'")
+    user_prompt = "Generate one video topic for tonight."
+
+    return generate(
+        system=system_prompt,
+        user=user_prompt,
+        max_tokens=200,
+        temperature=0.85,
+    ).strip().strip('"').strip("'")
 
 
 def main():
@@ -96,8 +123,13 @@ def main():
             print(f"[{channel_id}] Not scheduled today -- skipping.")
             continue
 
-        print(f"[{channel_id}] Generating topic with Gemini...")
-        topic = generate_topic(config)
+        print(f"[{channel_id}] Generating topic with Claude...")
+        try:
+            topic = generate_topic(config)
+        except Exception as e:
+            print(f"[{channel_id}] [ERROR] Topic generation failed: {e}")
+            continue
+
         print(f"[{channel_id}] Topic: {topic}")
 
         tonight_topics[channel_id] = {
@@ -109,6 +141,10 @@ def main():
             "voice": config.get("narrator", {}).get("voice", "en-US-GuyNeural"),
             "schedule": config.get("schedule", {}),
         }
+
+    if not tonight_topics:
+        print("[DONE] No channels active tonight. Exiting.")
+        return
 
     topics_str = json.dumps(tonight_topics, indent=2)
     result = cloudinary.uploader.upload(
