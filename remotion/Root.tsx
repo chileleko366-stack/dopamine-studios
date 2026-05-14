@@ -3,6 +3,7 @@ import { Composition } from "remotion";
 
 import { KineticQuote } from "./compositions/KineticQuote";
 import { ParticlesAscending } from "./compositions/ParticlesAscending";
+import { CelebrityCard } from "./compositions/CelebrityCard";
 
 // AllComponents.tsx is a barrel that exports the remaining 10 compositions.
 // This is intentional: keeping them in one file reduces clutter and makes it
@@ -215,6 +216,25 @@ export const RemotionRoot: React.FC = () => {
           primaryColor: "#e8ff47",
           backgroundColor: "#0a0a0a",
           subscribeText: "SUBSCRIBE",
+        }}
+      />
+
+      <Composition
+        id="celebrity_card"
+        component={CelebrityCard}
+        durationInFrames={150}
+        fps={FPS}
+        width={W}
+        height={H}
+        defaultProps={{
+          celebrityName: "STEVE JOBS",
+          cutoutUrl: undefined,
+          treatment: "cinematic_dark",
+          primaryColor: "#e8ff47",
+          backgroundColor: "#0a0a0a",
+          context: "1955-2011",
+          quote: "",
+          intensity: 0.6,
         }}
       />
     </>
