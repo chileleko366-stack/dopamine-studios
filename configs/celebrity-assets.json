@@ -1,0 +1,262 @@
+{
+  "_doc": {
+    "purpose": "Maps celebrity names to cutout PNG URLs used by CelebrityCard.tsx.",
+    "schema": {
+      "<slug>": {
+        "display_name": "Human-readable name shown on screen",
+        "cutout_url": "Cloudinary URL to a PNG with transparent background, or null",
+        "context": "Optional 1-line context shown beneath the name (e.g. 'MUSICIAN, 2019' or '1955-2011')",
+        "source_type": "public_domain | ai_generated | licensed | none",
+        "channels": ["CH1", "CH2", "CH3", "CH4", "CH5"],
+        "notes": "Free-form notes about sourcing or fair-use justification"
+      }
+    },
+    "how_to_add_assets": [
+      "1. Save your cutout PNG (transparent bg, ~2000px on long edge)",
+      "2. Upload to Cloudinary at: dopamine-studios/celebrities/<slug>.png",
+      "3. Copy the secure URL into the cutout_url field below",
+      "4. The pipeline will auto-pick it up on the next run"
+    ],
+    "fallback_behavior": "If cutout_url is null, CelebrityCard renders a typographic-only frame with [ NAME ] in brackets. The video still plays; the visual is just less rich."
+  },
+
+  "celebrities": {
+
+    "kanye_west": {
+      "display_name": "Kanye West",
+      "cutout_url": null,
+      "context": "MUSICIAN, 2008-2024",
+      "source_type": "none",
+      "channels": ["CH1"],
+      "notes": "No PD photo. Add AI-generated stylized portrait or licensed press photo."
+    },
+    "steve_jobs": {
+      "display_name": "Steve Jobs",
+      "cutout_url": null,
+      "context": "1955-2011",
+      "source_type": "none",
+      "channels": ["CH1", "CH2"],
+      "notes": "Wikipedia has several PD-licensed portraits (Apple keynote photos). Easy seed candidate."
+    },
+    "jim_carrey": {
+      "display_name": "Jim Carrey",
+      "cutout_url": null,
+      "context": "ACTOR",
+      "source_type": "none",
+      "channels": ["CH1"],
+      "notes": "No PD photo available."
+    },
+    "kobe_bryant": {
+      "display_name": "Kobe Bryant",
+      "cutout_url": null,
+      "context": "1978-2020",
+      "source_type": "none",
+      "channels": ["CH1"],
+      "notes": "No PD photo. Some CC press photos exist; verify license before use."
+    },
+    "david_goggins": {
+      "display_name": "David Goggins",
+      "cutout_url": null,
+      "context": "FORMER NAVY SEAL",
+      "source_type": "none",
+      "channels": ["CH1"],
+      "notes": "No PD photo."
+    },
+    "tyler_the_creator": {
+      "display_name": "Tyler, the Creator",
+      "cutout_url": null,
+      "context": "MUSICIAN",
+      "source_type": "none",
+      "channels": ["CH1"],
+      "notes": "No PD photo."
+    },
+    "conor_mcgregor": {
+      "display_name": "Conor McGregor",
+      "cutout_url": null,
+      "context": "MMA FIGHTER",
+      "source_type": "none",
+      "channels": ["CH1"],
+      "notes": "No PD photo."
+    },
+    "mike_tyson": {
+      "display_name": "Mike Tyson",
+      "cutout_url": null,
+      "context": "BOXER",
+      "source_type": "none",
+      "channels": ["CH1"],
+      "notes": "Some PD government photos from prison era; older boxing footage stills could work."
+    },
+    "elon_musk": {
+      "display_name": "Elon Musk",
+      "cutout_url": null,
+      "context": "ENTREPRENEUR",
+      "source_type": "none",
+      "channels": ["CH1", "CH2"],
+      "notes": "Some PD government event photos available via Wikimedia. Good seed candidate."
+    },
+    "jeff_bezos": {
+      "display_name": "Jeff Bezos",
+      "cutout_url": null,
+      "context": "FOUNDER, AMAZON",
+      "source_type": "none",
+      "channels": ["CH1", "CH2"],
+      "notes": "Government event photos PD-available. Good seed candidate."
+    },
+    "mark_zuckerberg": {
+      "display_name": "Mark Zuckerberg",
+      "cutout_url": null,
+      "context": "FOUNDER, META",
+      "source_type": "none",
+      "channels": ["CH1", "CH2"],
+      "notes": "Congressional hearing photos PD. Good seed candidate."
+    },
+    "bill_gates": {
+      "display_name": "Bill Gates",
+      "cutout_url": null,
+      "context": "FOUNDER, MICROSOFT",
+      "source_type": "none",
+      "channels": ["CH1", "CH2"],
+      "notes": "Many PD photos available via Wikimedia. Good seed candidate."
+    },
+
+    "warren_buffett": {
+      "display_name": "Warren Buffett",
+      "cutout_url": null,
+      "context": "INVESTOR",
+      "source_type": "none",
+      "channels": ["CH2"],
+      "notes": "Government event photos PD-available."
+    },
+    "elizabeth_holmes": {
+      "display_name": "Elizabeth Holmes",
+      "cutout_url": null,
+      "context": "THERANOS, CONVICTED 2022",
+      "source_type": "none",
+      "channels": ["CH2", "CH3"],
+      "notes": "Trial photos may be public record. Verify before use."
+    },
+    "sam_bankman_fried": {
+      "display_name": "Sam Bankman-Fried",
+      "cutout_url": null,
+      "context": "FTX, CONVICTED 2023",
+      "source_type": "none",
+      "channels": ["CH2", "CH3"],
+      "notes": "Some congressional testimony photos PD."
+    },
+    "bernie_madoff": {
+      "display_name": "Bernie Madoff",
+      "cutout_url": null,
+      "context": "1938-2021",
+      "source_type": "none",
+      "channels": ["CH2", "CH3"],
+      "notes": "FBI mugshot and government photos PD-available."
+    },
+
+    "j_edgar_hoover": {
+      "display_name": "J. Edgar Hoover",
+      "cutout_url": null,
+      "context": "FBI DIRECTOR, 1924-1972",
+      "source_type": "none",
+      "channels": ["CH3"],
+      "notes": "Government photos PD. Easy to source for archival_redact treatment."
+    },
+    "richard_nixon": {
+      "display_name": "Richard Nixon",
+      "cutout_url": null,
+      "context": "1913-1994",
+      "source_type": "none",
+      "channels": ["CH3"],
+      "notes": "White House photos PD."
+    },
+    "daniel_ellsberg": {
+      "display_name": "Daniel Ellsberg",
+      "cutout_url": null,
+      "context": "PENTAGON PAPERS, 1971",
+      "source_type": "none",
+      "channels": ["CH3"],
+      "notes": "Some PD press photos available."
+    },
+    "edward_snowden": {
+      "display_name": "Edward Snowden",
+      "cutout_url": null,
+      "context": "WHISTLEBLOWER, 2013",
+      "source_type": "none",
+      "channels": ["CH3"],
+      "notes": "Some CC photos exist. Verify license."
+    },
+
+    "stanley_milgram": {
+      "display_name": "Stanley Milgram",
+      "cutout_url": null,
+      "context": "1933-1984",
+      "source_type": "none",
+      "channels": ["CH4"],
+      "notes": "Academic-era PD photos likely available."
+    },
+    "philip_zimbardo": {
+      "display_name": "Philip Zimbardo",
+      "cutout_url": null,
+      "context": "STANFORD, 1971",
+      "source_type": "none",
+      "channels": ["CH4"],
+      "notes": "Academic photos. Verify license; may need to use lecture-still grabs."
+    },
+    "daniel_kahneman": {
+      "display_name": "Daniel Kahneman",
+      "cutout_url": null,
+      "context": "1934-2024",
+      "source_type": "none",
+      "channels": ["CH4"],
+      "notes": "Nobel ceremony photos PD-available."
+    },
+    "robert_sapolsky": {
+      "display_name": "Robert Sapolsky",
+      "cutout_url": null,
+      "context": "STANFORD NEUROENDOCRINOLOGIST",
+      "source_type": "none",
+      "channels": ["CH4"],
+      "notes": "Stanford has CC-licensed portraits."
+    },
+    "elizabeth_loftus": {
+      "display_name": "Elizabeth Loftus",
+      "cutout_url": null,
+      "context": "MEMORY RESEARCHER",
+      "source_type": "none",
+      "channels": ["CH4"],
+      "notes": "Academic photos."
+    },
+
+    "ada_lovelace": {
+      "display_name": "Ada Lovelace",
+      "cutout_url": null,
+      "context": "1815-1852",
+      "source_type": "none",
+      "channels": ["CH5"],
+      "notes": "Famous portrait by Margaret Sarah Carpenter, public domain."
+    },
+    "marie_curie": {
+      "display_name": "Marie Curie",
+      "cutout_url": null,
+      "context": "1867-1934",
+      "source_type": "none",
+      "channels": ["CH4", "CH5"],
+      "notes": "Many PD photographs available."
+    },
+    "joseph_bazalgette": {
+      "display_name": "Joseph Bazalgette",
+      "cutout_url": null,
+      "context": "ENGINEER, LONDON SEWERS, 1819-1891",
+      "source_type": "none",
+      "channels": ["CH5"],
+      "notes": "Victorian-era PD portraits available."
+    },
+    "henrietta_lacks": {
+      "display_name": "Henrietta Lacks",
+      "cutout_url": null,
+      "context": "1920-1951",
+      "source_type": "none",
+      "channels": ["CH4", "CH5"],
+      "notes": "Family-released PD photograph exists."
+    }
+  }
+}
