@@ -85,6 +85,22 @@ CHANNEL_DEFAULT_TEMPLATE = {
     "CH5": "kinetic_quote",       # Quiet Record -- archival serif
 }
 
+# Visual treatment style for celebrity moments per channel
+# Matches the treatments defined in CelebrityCard.tsx
+CHANNEL_CELEBRITY_TREATMENT = {
+    "CH1": "cinematic_dark",      # Dopamine Loop -- dark, yellow accent, particles
+    "CH2": "cinematic_graph",     # FinanceFiction -- graph overlay
+    "CH3": "archival_redact",     # REDACTED -- sepia + redaction stamps
+    "CH4": "editorial_clean",     # Grey Matter -- clean serif editorial
+    "CH5": "archival_sepia",      # Quiet Record -- parchment + Ken-Burns
+}
+
+# Target number of celebrity anchor moments per video (cinematic best practice)
+TARGET_CELEBRITY_MOMENTS = 5  # 4-6 range, aim for the middle
+
+# Path to celebrity asset manifest
+CELEBRITY_ASSETS_PATH = "configs/celebrity-assets.json"
+
 
 def log(channel_id: str, msg: str):
     print(f"[{channel_id}][script-gen] {msg}", flush=True)
@@ -327,21 +343,156 @@ def assign_mograph_to_line(
 
 def assign_clip_cue(line: str, config: dict) -> str:
     """
-    For celebrity-driven channels (narrator off, like CH1/CH2), some lines
-    are spoken by the celebrity themselves. We mark these with a clip_cue so
-    the assembler knows to source celebrity audio.
-
-    For now, very simple heuristic: if narrator_mode is off, alternate lines
-    are treated as celebrity-spoken with a generic cue. This is a placeholder
-    that a future stage can refine using actual clip libraries.
+    Legacy field kept for backward compatibility with existing manifest readers.
+    Always returns 'no_clip' now -- celebrity audio is not used.
+    Celebrity *visual* moments are tracked via line['celebrity_treatment']
+    (see select_celebrity_moments below).
     """
-    narrator_mode = config.get("narrator", {}).get("mode", "off")
-    if narrator_mode == "on":
-        # Documentary channels never need celebrity clips
-        return "no_clip"
-    # For celebrity channels, this is left as no_clip for now -- clip-library
-    # integration is Stage 3 work. The mograph track still fires for visuals.
     return "no_clip"
+
+
+# ---------------------------------------------------------------------------
+# Celebrity assets + treatment selection
+# ---------------------------------------------------------------------------
+
+def load_celebrity_assets() -> dict:
+    """Load configs/celebrity-assets.json. Returns empty dict if missing."""
+    if not os.path.exists(CELEBRITY_ASSETS_PATH):
+        return {"celebrities": {}}
+    try:
+        with open(CELEBRITY_ASSETS_PATH) as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[WARN] Could not load celebrity assets: {e}")
+        return {"celebrities": {}}
+
+
+def parse_celebrity_pool(config: dict) -> list[tuple[str, str]]:
+    """
+    Read the channel bible's celebrity / subject pool and split it into
+    (slug, display_name) tuples.
+
+    Bible fields used (any of these):
+      script.celebrities          (CH1, CH2)
+      script.subjects             (CH3)
+      script.researchers_and_studies (CH4)
+      script.subject_areas        (CH5 -- not really celebrities, skip)
+    """
+    raw = (
+        config.get("script", {}).get("celebrities")
+        or config.get("script", {}).get("subjects")
+        or config.get("script", {}).get("researchers_and_studies")
+        or ""
+    )
+    if not raw:
+        return []
+
+    names = [n.strip() for n in raw.replace("\n", ",").split(",") if n.strip()]
+    out = []
+    for name in names:
+        # Skip very long entries (those are probably study names, not people)
+        if len(name) > 60:
+            continue
+        slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+        if slug:
+            out.append((slug, name))
+    return out
+
+
+def select_celebrity_moments(
+    lines: list[dict],
+    config: dict,
+    channel_id: str,
+    target: int = TARGET_CELEBRITY_MOMENTS,
+) -> list[dict]:
+    """
+    Pick `target` lines from the full script that should become celebrity
+    anchor moments. Picks lines that mention a known celebrity by name OR,
+    if no explicit mention, evenly-spaced lines through the script.
+
+    Returns the same `lines` list, mutating each picked line to add a
+    `celebrity_treatment` dict.
+    """
+    if not lines:
+        return lines
+
+    pool = parse_celebrity_pool(config)
+    pool_lookup = {slug: display for slug, display in pool}
+
+    # CH5 (Quiet Record) uses subject_areas which are topics, not people.
+    # Skip celebrity treatment entirely for that channel.
+    if not pool:
+        return lines
+
+    assets = load_celebrity_assets().get("celebrities", {})
+    treatment_name = CHANNEL_CELEBRITY_TREATMENT.get(channel_id, "cinematic_dark")
+
+    # Phase 1: find lines that explicitly mention any celebrity in the pool
+    explicit_matches = []  # list of (line_index, slug, display_name)
+    for i, line_obj in enumerate(lines):
+        line_text = line_obj["line"].lower()
+        for slug, display in pool:
+            # Match the surname or full name (case-insensitive)
+            surname = display.split()[-1].lower() if display.split() else ""
+            full_lower = display.lower()
+            if (surname and len(surname) > 3 and surname in line_text) or full_lower in line_text:
+                explicit_matches.append((i, slug, display))
+                break  # one celebrity per line max
+
+    # Dedupe: don't anchor two adjacent lines
+    deduped = []
+    last_idx = -10
+    for match in explicit_matches:
+        if match[0] - last_idx >= 2:
+            deduped.append(match)
+            last_idx = match[0]
+    explicit_matches = deduped
+
+    # Phase 2: if we have fewer than `target` explicit mentions, fill in
+    # evenly-spaced lines and pick a celebrity from the pool that hasn't been
+    # used yet
+    if len(explicit_matches) < target:
+        used_indices = {m[0] for m in explicit_matches}
+        used_slugs = {m[1] for m in explicit_matches}
+        remaining_slots = target - len(explicit_matches)
+
+        # Even-space remaining slots through the script
+        step = max(1, len(lines) // (target + 1))
+        candidate_positions = list(range(step, len(lines) - step, step))
+        candidate_positions = [p for p in candidate_positions if p not in used_indices]
+
+        # Available celebrities to assign
+        available = [
+            (slug, display) for slug, display in pool if slug not in used_slugs
+        ]
+
+        for i, pos in enumerate(candidate_positions[:remaining_slots]):
+            if not available:
+                break
+            slug, display = available[i % len(available)]
+            explicit_matches.append((pos, slug, display))
+
+    # Phase 3: apply celebrity_treatment to each picked line
+    for idx, slug, display in explicit_matches:
+        asset_entry = assets.get(slug, {})
+        cutout_url = asset_entry.get("cutout_url")
+        context = asset_entry.get("context", "")
+
+        # Generate a short pull quote from the line (truncate at ~10 words)
+        words = lines[idx]["line"].split()
+        quote = " ".join(words[:10]) if len(words) > 10 else lines[idx]["line"]
+        quote = quote.rstrip(".,!?").strip()
+
+        lines[idx]["celebrity_treatment"] = {
+            "celebrity_slug": slug,
+            "celebrity_name": display,
+            "cutout_url": cutout_url,  # may be null -- compositions fall back
+            "treatment": treatment_name,
+            "context": context,
+            "quote": quote if len(quote) < 80 else "",
+        }
+
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +598,14 @@ def generate_script_for_channel(channel_id: str, topic: str, config: dict) -> Op
             "clip_cue": assign_clip_cue(ln, config),
             "mograph": assign_mograph_to_line(ln, triggers, default_template, config),
         })
+
+    # E2. Select 4-6 celebrity anchor moments (high-end cinematic treatment)
+    log(channel_id, "Stage E2: selecting celebrity anchor moments")
+    lines_with_visuals = select_celebrity_moments(
+        lines_with_visuals, config, channel_id, target=TARGET_CELEBRITY_MOMENTS
+    )
+    celeb_count = sum(1 for ln in lines_with_visuals if "celebrity_treatment" in ln)
+    log(channel_id, f"  Selected {celeb_count} celebrity anchor moments")
 
     # F. SEO
     log(channel_id, "Stage F: SEO package")
