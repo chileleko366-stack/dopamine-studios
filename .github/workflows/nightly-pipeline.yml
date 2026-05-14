@@ -33,6 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install \
+            anthropic \
             google-generativeai \
             requests \
             cloudinary \
@@ -40,7 +41,9 @@ jobs:
 
       - name: Generate tonight's topics
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ENABLE_GEMINI_FALLBACK: "true"
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
@@ -51,7 +54,9 @@ jobs:
 
       - name: Generate full scripts + write render jobs to Cloudinary
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ENABLE_GEMINI_FALLBACK: "true"
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
@@ -63,5 +68,8 @@ jobs:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-          CHANNEL_OVERRIDE: ${{ github.event.inputs.channel_id || 'ALL' }}
-        run: python scripts/render_mographs.py
+        run: |
+          for CH in CH1 CH2 CH3 CH4 CH5; do
+            export CHANNEL_ID="$CH"
+            python scripts/render_mographs.py || echo "[$CH] render skipped/failed"
+          done
