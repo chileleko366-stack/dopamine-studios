@@ -1,128 +1,146 @@
 """
 claude_client.py
-Shared AI client for the pipeline.
 
-Claude (Anthropic) is the primary provider for all script-generation calls.
-Google Gemini is wrapped as a fallback that only fires if Claude returns an
-error after 3 retries with exponential backoff.
-
-Gemini SDK note: uses the current `google.genai` package (not the deprecated
-`google.generativeai` which was sunset in 2025).
+PRIMARY: Claude Code CLI (Pro subscription, free)
+FALLBACK 1: Anthropic API key
+FALLBACK 2: Google Gemini free tier (gemini-1.5-flash)
 """
 
 import os
+import json
 import time
+import subprocess
+import tempfile
 from typing import Optional
 
 try:
-    from anthropic import Anthropic, APIError, APIStatusError, APITimeoutError
-    _CLAUDE_AVAILABLE = True
+        from anthropic import Anthropic, APIError, APIStatusError, APITimeoutError
+        CLAUDEAPI_AVAILABLE = True
 except ImportError:
-    _CLAUDE_AVAILABLE = False
+        CLAUDEAPI_AVAILABLE = False
 
 try:
-    from google import genai as google_genai
-    from google.genai import types as genai_types
-    _GEMINI_AVAILABLE = True
+        from google import genai as google_genai
+        from google.genai import types as genai_types
+        GEMINIAVAILABLE = True
 except ImportError:
-    _GEMINI_AVAILABLE = False
+        GEMINIAVAILABLE = False
 
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-7")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+CLAUDE_MODEL           = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
+GEMINI_MODEL           = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+ENABLE_API_FALLBACK    = os.environ.get("ENABLE_API_FALLBACK", "true").lower() == "true"
 ENABLE_GEMINI_FALLBACK = os.environ.get("ENABLE_GEMINI_FALLBACK", "true").lower() == "true"
 
-
 def _log(msg: str):
-    print(f"[claude_client] {msg}", flush=True)
+        print(f"[claude_client] {msg}", flush=True)
 
+def cliavailable() -> bool:
+        try:
+                    r = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=10)
+                    return r.returncode == 0
+except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
 
-def _claude_call(system: str, user: str, max_tokens: int, temperature: float) -> str:
-    if not _CLAUDE_AVAILABLE:
-        raise RuntimeError("anthropic package not installed")
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError("ANTHROPIC_API_KEY not set")
+def clicall(system: str, user: str) -> str:
+        full_prompt = f"{system}\n\n---\n\n{user}"
+        result = subprocess.run(
+            ["claude", "-p", full_prompt, "--output-format", "text", "--model", CLAUDE_MODEL],
+            capture_output=True, text=True, timeout=180,
+        )
+        if result.returncode != 0:
+                    raise RuntimeError(f"Claude CLI error (exit {result.returncode}): {result.stderr[:400]}")
+                return result.stdout.strip()
 
-    client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+def apicall(system: str, user: str, max_tokens: int, temperature: float) -> str:
+        if not CLAUDEAPI_AVAILABLE:
+                    raise RuntimeError("anthropic package not installed")
+                if not os.environ.get("ANTHROPIC_API_KEY"):
+                            raise RuntimeError("ANTHROPIC_API_KEY not set")
+                        client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+                model=CLAUDE_MODEL,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system,
+                messages=[{"role": "user", "content": user}],
     )
-    parts = [block.text for block in response.content if getattr(block, "type", None) == "text"]
-    return "".join(parts).strip()
+    return "".join(b.text for b in response.content if getattr(b, "type", None) == "text").strip()
 
-
-def _gemini_fallback(system: str, user: str, max_tokens: int, temperature: float) -> str:
-    if not _GEMINI_AVAILABLE:
-        raise RuntimeError("google-genai not installed; pip install google-genai")
-    if not os.environ.get("GEMINI_API_KEY"):
-        raise RuntimeError("GEMINI_API_KEY not set")
-
-    client = google_genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    combined = f"[SYSTEM INSTRUCTIONS]\n{system}\n\n[TASK]\n{user}"
+def geminicall(system: str, user: str, max_tokens: int, temperature: float) -> str:
+        if not GEMINIAVAILABLE:
+                    raise RuntimeError("google-genai not installed")
+                if not os.environ.get("GEMINI_API_KEY"):
+                            raise RuntimeError("GEMINI_API_KEY not set")
+                        client = google_genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=combined,
-        config=genai_types.GenerateContentConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature,
-        ),
+                model=GEMINI_MODEL,
+                contents=f"[SYSTEM]\n{system}\n\n[TASK]\n{user}",
+                config=genai_types.GenerateContentConfig(
+                                max_output_tokens=max_tokens,
+                                temperature=temperature,
+                ),
     )
     return response.text.strip()
 
-
 def generate(
-    system: str,
-    user: str,
-    max_tokens: int = 4096,
-    temperature: float = 0.7,
-    max_retries: int = 3,
+        system: str,
+        user: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+        max_retries: int = 3,
 ) -> str:
-    last_error: Optional[Exception] = None
+        errors = []
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            return _claude_call(system, user, max_tokens, temperature)
-        except (APIStatusError, APITimeoutError, APIError) as e:
-            last_error = e
-            wait = 2 ** attempt
-            _log(f"Claude attempt {attempt}/{max_retries} failed: {type(e).__name__}: {e}")
-            if attempt < max_retries:
-                _log(f"Retrying in {wait}s...")
-                time.sleep(wait)
-        except Exception as e:
-            last_error = e
-            _log(f"Claude unexpected error: {type(e).__name__}: {e}")
-            break
+    if cliavailable():
+                _log("Using Claude Code CLI (Pro subscription)")
+                for attempt in range(1, max_retries + 1):
+                                try:
+                                                    return clicall(system, user)
+except Exception as e:
+                errors.append(f"CLI/{attempt}: {e}")
+                _log(f"CLI attempt {attempt}/{max_retries} failed: {e}")
+                if attempt < max_retries:
+                                        time.sleep(2 ** attempt)
+else:
+        _log("Claude CLI not available - trying API key")
+
+    if ENABLE_API_FALLBACK and os.environ.get("ANTHROPIC_API_KEY"):
+                _log("Using Anthropic API key...")
+                for attempt in range(1, max_retries + 1):
+                                try:
+                                                    return apicall(system, user, max_tokens, temperature)
+except (APIStatusError, APITimeoutError, APIError) as e:
+                errors.append(f"API/{attempt}: {e}")
+                _log(f"API attempt {attempt}/{max_retries} failed: {e}")
+                if attempt < max_retries:
+                                        time.sleep(2 ** attempt)
+except Exception as e:
+                errors.append(f"API/unexpected: {e}")
+                break
 
     if ENABLE_GEMINI_FALLBACK:
-        _log(f"Claude failed. Falling back to Gemini ({GEMINI_MODEL})...")
-        try:
-            return _gemini_fallback(system, user, max_tokens, temperature)
-        except Exception as e:
-            _log(f"Gemini fallback failed: {type(e).__name__}: {e}")
-            raise RuntimeError(
-                f"Both providers failed. Claude: {last_error}. Gemini: {e}"
-            )
+                _log(f"Using Gemini ({GEMINI_MODEL})...")
+                try:
+                                return geminicall(system, user, max_tokens, temperature)
+except Exception as e:
+            errors.append(f"Gemini: {e}")
+            _log(f"Gemini failed: {e}")
 
-    raise RuntimeError(f"Claude failed after {max_retries} attempts: {last_error}")
-
+    raise RuntimeError("All providers failed:\n" + "\n".join(errors))
 
 def generate_json(
-    system: str,
-    user: str,
-    max_tokens: int = 4096,
-    temperature: float = 0.5,
-    max_retries: int = 3,
+        system: str,
+        user: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.5,
+        max_retries: int = 3,
 ) -> dict:
-    import json, re
-    raw = generate(system, user, max_tokens, temperature, max_retries)
-    cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError as e:
-        _log(f"JSON parse failed. Raw:\n{raw[:500]}")
-        raise RuntimeError(f"AI response was not valid JSON: {e}")
+        import re
+        raw = generate(system, user, max_tokens, temperature, max_retries)
+        cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        try:
+                    return json.loads(cleaned)
+except json.JSONDecodeError as e:
+        _log(f"JSON parse failed. Raw:\n{raw[:400]}")
+        raise RuntimeError(f"Not valid JSON: {e}")
