@@ -17,6 +17,6 @@
     "typescript": "^5.0.0"
   },
   "remotion": {
-    "entryPoint": "./remotion/index.tsx"
+    "entryPoint": "./index.tsx"
   }
 }
