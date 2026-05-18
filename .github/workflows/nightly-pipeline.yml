@@ -30,7 +30,20 @@ jobs:
           node-version: "20"
 
       - name: Install Python dependencies
-        run: pip install anthropic google-genai requests cloudinary python-dotenv Pillow edge-tts ffmpeg-python google-api-python-client google-auth-httplib2 google-auth-oauthlib google-auth
+        run: |
+          pip install \
+            anthropic \
+            google-genai \
+            requests \
+            cloudinary \
+            python-dotenv \
+            Pillow \
+            edge-tts \
+            ffmpeg-python \
+            google-api-python-client \
+            google-auth-httplib2 \
+            google-auth-oauthlib \
+            google-auth
 
       - name: Generate tonight topics
         env:
@@ -65,7 +78,14 @@ jobs:
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
         run: |
-          for CH in CH1 CH2 CH3 CH4 CH5; do
+          CHANNEL_INPUT="${{ github.event.inputs.channel_id || 'ALL' }}"
+          if [ "$CHANNEL_INPUT" = "ALL" ]; then
+            CHANNELS="CH1 CH2 CH3 CH4 CH5"
+          else
+            CHANNELS="$CHANNEL_INPUT"
+          fi
+          for CH in $CHANNELS; do
+            echo "--- Rendering mographs for $CH ---"
             export CHANNEL_ID="$CH"
             python scripts/render_mographs.py || echo "[$CH] render skipped/failed"
           done
