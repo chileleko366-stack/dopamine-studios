@@ -5,10 +5,7 @@ Reads today's render job from Cloudinary, renders each mograph clip
 using Remotion (React/Node.js), uploads back to Cloudinary.
 
 Replaces ALL Blender mograph rendering.
-The render PC (watcher.py) is now ONLY needed if you want to keep it --
-but this script makes it completely optional.
-
-Called by morning-assembly.yml before assemble_video.py
+Called by nightly-pipeline.yml and morning-assembly.yml (catch-up).
 """
 
 import json
@@ -33,8 +30,8 @@ cloudinary.config(
 )
 
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "CH1")
-DATE_STR   = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-WORK_DIR   = tempfile.mkdtemp(prefix=f"remotion_{CHANNEL_ID}_")
+DATE_STR = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+WORK_DIR = tempfile.mkdtemp(prefix=f"remotion_{CHANNEL_ID}_")
 
 # Channel color palettes
 CHANNEL_PALETTES = {
@@ -47,21 +44,20 @@ CHANNEL_PALETTES = {
 
 # Map mograph template names to Remotion composition IDs
 COMPOSITION_MAP = {
-    "kinetic_quote":       "kinetic_quote",
+    "kinetic_quote": "kinetic_quote",
     "particles_ascending": "particles_ascending",
-    "data_graph_rise":     "data_graph_rise",
-    "glitch_transition":   "glitch_transition",
-    "crt_text_overlay":    "crt_text_overlay",
-    "fire_ignite":         "fire_ignite",
-    "chains_break":        "chains_break",
-    "clock_dissolve":      "clock_dissolve",
-    "maze_fragment":       "maze_fragment",
-    "water_fill_screen":   "water_fill_screen",
-    "map_zoom":            "map_zoom",
-    "tv_intro":            "tv_intro",
-    "end_screen":          "end_screen",
-    # Fallback for any unknown template
-    "default":             "kinetic_quote",
+    "data_graph_rise": "data_graph_rise",
+    "glitch_transition": "glitch_transition",
+    "crt_text_overlay": "crt_text_overlay",
+    "fire_ignite": "fire_ignite",
+    "chains_break": "chains_break",
+    "clock_dissolve": "clock_dissolve",
+    "maze_fragment": "maze_fragment",
+    "water_fill_screen": "water_fill_screen",
+    "map_zoom": "map_zoom",
+    "tv_intro": "tv_intro",
+    "end_screen": "end_screen",
+    "default": "kinetic_quote",
 }
 
 
@@ -80,13 +76,15 @@ def fetch_manifest() -> dict | None:
         return None
 
 
-def install_remotion():
+def install_remotion() -> bool:
     """Install Node.js dependencies for Remotion in GitHub Actions."""
     remotion_dir = Path(__file__).parent.parent / "remotion"
     log("Installing Remotion dependencies...")
     result = subprocess.run(
         ["npm", "install", "--prefix", str(remotion_dir)],
-        capture_output=True, text=True, timeout=120
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
     if result.returncode != 0:
         log(f"[ERROR] npm install failed: {result.stderr[-500:]}")
@@ -95,30 +93,37 @@ def install_remotion():
     return True
 
 
-def render_clip(composition_id: str, props: dict, output_path: str, duration_frames: int = 72) -> bool:
-    """
-    Render a single Remotion composition to an MP4 file.
-    """
+def render_clip(
+    composition_id: str,
+    props: dict,
+    output_path: str,
+    duration_frames: int = 72,
+) -> bool:
+    """Render a single Remotion composition to an MP4 file."""
     remotion_dir = Path(__file__).parent.parent / "remotion"
     props_json = json.dumps(props)
 
     cmd = [
-        "npx", "remotion", "render",
-        str(remotion_dir / "index.tsx"),
+        "npx", "--yes", "remotion", "render",
         composition_id,
         output_path,
         "--props", props_json,
         "--frames", f"0-{duration_frames - 1}",
         "--codec", "h264",
-        "--output-file-name", output_path,
         "--log", "error",
     ]
 
-    log(f"  Rendering {composition_id} → {Path(output_path).name}")
+    log(f"  Rendering {composition_id} -> {Path(output_path).name}")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(remotion_dir),
+        )
         if result.returncode != 0:
-            log(f"  [ERROR] Remotion failed: {result.stderr[-400:]}")
+            log(f"  [ERROR] Remotion failed: {result.stderr[-600:]}")
             return False
         if not os.path.exists(output_path):
             log(f"  [ERROR] Output not found: {output_path}")
@@ -176,24 +181,25 @@ def main():
 
     for i, line_data in enumerate(script_lines):
         clip_cue = line_data.get("clip_cue", "no_clip")
-        mograph  = line_data.get("mograph", {})
+        mograph = line_data.get("mograph", {})
 
         # Celebrity clip -- no render needed
         if clip_cue != "no_clip":
             log(f"  Line {i}: celebrity clip [{clip_cue}] -- skipping")
             rendered_clips.append({
-                "index": i, "type": "celebrity_clip",
-                "cue": clip_cue, "line": line_data.get("line", ""),
+                "index": i,
+                "type": "celebrity_clip",
+                "cue": clip_cue,
+                "line": line_data.get("line", ""),
             })
             continue
 
-        template       = mograph.get("template", "kinetic_quote")
+        template = mograph.get("template", "kinetic_quote")
         composition_id = COMPOSITION_MAP.get(template, "kinetic_quote")
-        intensity      = mograph.get("intensity", "medium")
+        intensity = mograph.get("intensity", "medium")
         intensity_float = {"low": 0.3, "medium": 0.6, "high": 1.0}.get(intensity, 0.6)
         duration_frames = mograph.get("duration_frames", 72)
 
-        # Build props for this composition
         props = {
             **palette,
             "intensity": intensity_float,
@@ -207,23 +213,26 @@ def main():
         success = render_clip(composition_id, props, output_path, duration_frames)
 
         if not success:
-            # Fallback to kinetic_quote
             log(f"  Falling back to kinetic_quote for line {i}")
             success = render_clip("kinetic_quote", props, output_path, 72)
 
         if success:
             cloud_url = upload_clip(output_path, i)
             rendered_clips.append({
-                "index": i, "type": "mograph",
-                "cloudinary_url": cloud_url, "line": line_data.get("line", ""),
+                "index": i,
+                "type": "mograph",
+                "cloudinary_url": cloud_url,
+                "line": line_data.get("line", ""),
             })
         else:
             rendered_clips.append({
-                "index": i, "type": "render_failed", "line": line_data.get("line", ""),
+                "index": i,
+                "type": "render_failed",
+                "line": line_data.get("line", ""),
             })
 
-    # Write manifest with rendered clips
-    manifest["clips"]  = rendered_clips
+    # Update manifest with rendered clips
+    manifest["clips"] = rendered_clips
     manifest["status"] = "rendered"
     manifest_str = json.dumps(manifest, indent=2)
     encoded = base64.b64encode(manifest_str.encode()).decode()
@@ -235,7 +244,7 @@ def main():
     )
 
     success_count = sum(1 for c in rendered_clips if c["type"] == "mograph")
-    fail_count    = sum(1 for c in rendered_clips if c["type"] == "render_failed")
+    fail_count = sum(1 for c in rendered_clips if c["type"] == "render_failed")
     log(f"\n[DONE] {success_count} mographs rendered, {fail_count} failed, manifest updated.")
 
 
