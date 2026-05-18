@@ -23,7 +23,7 @@ except ImportError:
     GEMINIAVAILABLE = False
 
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-6")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 ENABLE_API_FALLBACK = os.environ.get("ENABLE_API_FALLBACK", "true").lower() == "true"
 ENABLE_GEMINI_FALLBACK = os.environ.get("ENABLE_GEMINI_FALLBACK", "true").lower() == "true"
 
