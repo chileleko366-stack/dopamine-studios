@@ -22,7 +22,7 @@ cloudinary.config(
 )
 
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "CH1")
-DATE_STR   = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+DATE_STR = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 def delete_folder_resources(prefix: str, resource_type: str = "video"):
@@ -37,6 +37,8 @@ def delete_folder_resources(prefix: str, resource_type: str = "video"):
         if ids:
             cloudinary.api.delete_resources(ids, resource_type=resource_type)
             print(f"  Deleted {len(ids)} {resource_type} files from {prefix}")
+        else:
+            print(f"  Nothing to delete at {prefix}")
     except Exception as e:
         print(f"  [WARN] Cleanup skipped for {prefix}: {e}")
 
@@ -47,11 +49,11 @@ def main():
     # Verify upload succeeded before deleting
     manifest_id = f"dopamine-studios/{CHANNEL_ID}/manifests/{DATE_STR}"
     try:
-        result  = cloudinary.api.resource(manifest_id, resource_type="raw")
-        resp    = requests.get(result["secure_url"], timeout=10)
+        result = cloudinary.api.resource(manifest_id, resource_type="raw")
+        resp = requests.get(result["secure_url"], timeout=10)
         manifest = resp.json()
         if manifest.get("status") != "uploaded":
-            print(f"[{CHANNEL_ID}] Upload not confirmed -- skipping cleanup for safety.")
+            print(f"[{CHANNEL_ID}] Upload not confirmed (status: {manifest.get('status')}) -- skipping cleanup.")
             sys.exit(0)
     except Exception as e:
         print(f"[{CHANNEL_ID}] Could not verify upload: {e} -- skipping cleanup.")
@@ -59,26 +61,30 @@ def main():
 
     # Delete rendered mograph clips
     delete_folder_resources(
-        f"dopamine-studios/{CHANNEL_ID}/rendered/{DATE_STR}", "video")
+        f"dopamine-studios/{CHANNEL_ID}/rendered/{DATE_STR}", "video"
+    )
 
     # Delete final assembled video
     delete_folder_resources(
-        f"dopamine-studios/{CHANNEL_ID}/final/{DATE_STR}", "video")
+        f"dopamine-studios/{CHANNEL_ID}/final/{DATE_STR}", "video"
+    )
 
     # Delete voiceover audio
     delete_folder_resources(
-        f"dopamine-studios/{CHANNEL_ID}/voiceover/{DATE_STR}", "raw")
+        f"dopamine-studios/{CHANNEL_ID}/voiceover/{DATE_STR}", "raw"
+    )
 
-    # Delete render job from queue
+    # Delete tonight topics entry for this channel
     try:
         cloudinary.uploader.destroy(
             f"dopamine-studios/queue/render-job-{CHANNEL_ID}-{DATE_STR}",
-            resource_type="raw")
-        print(f"  Deleted render job from queue.")
+            resource_type="raw",
+        )
+        print("  Deleted render job from queue.")
     except Exception:
         pass
 
-    print(f"[{CHANNEL_ID}] Cleanup complete. Thumbnails + SEO + published records kept.")
+    print(f"[{CHANNEL_ID}] Cleanup complete. Thumbnails + published records kept.")
 
 
 if __name__ == "__main__":
