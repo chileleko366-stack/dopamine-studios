@@ -40,7 +40,7 @@ jobs:
         run: |
           pip install \
             anthropic \
-            google-generativeai \
+            google-genai \
             requests \
             cloudinary \
             python-dotenv \
